@@ -29,15 +29,8 @@ physics.addBody(borderRight, "static", borderBody)
 --==============================
 -- Object creation
 --==============================
-
--- Create a target that moves on tap
-local target = display.newCircle(0,0,10)
-local function moveTarget(event)
-	target.x, target.y = event.x, event.y
-	target.rotation = math.random(0, 360)
-end
-Runtime:addEventListener("tap", moveTarget)
-
 -- Create an object to perform event
-
-local newObject = Movement.new{target = target, move = "arrive"}
+local newObject = Movement.new{radius = 16, move = "wander", target = {x = 0, y = 0}}
+display.newImageRect(newObject, "character-01.png", 61, 61)
+local newObject2 = Movement.new{radius = 16, target = newObject, move = "pursue", rotate = "align", maxSpeed = 10}
+display.newImageRect(newObject2, "character-02.png", 61, 61)

@@ -37,4 +37,15 @@ function Vector.normalize(v1)
 	return {x = v1.x / magnitude, y = v1.y / magnitude}
 end
 
+-- Returns a normal vector in direction of angle
+function Vector.fromAngle(degrees)
+	local radians = math.rad(degrees)
+	return {x = math.cos(radians), y = math.sin(radians)}
+end
+
+-- Returns a degrees from a vector
+function Vector.toAngle(v1)
+	return math.deg(math.atan2(-v1.y, -v1.x))
+end
+
 return Vector

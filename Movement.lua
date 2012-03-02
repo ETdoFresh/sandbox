@@ -10,14 +10,21 @@ local Movement = {}
 local Vector = require "Vector"
 
 -- Default Values
-local maxAcceleration = 20
-local maxAngularAcceleration = 10
-local maxSpeed = 150 -- speed is pixels per second
-local maxRotation = 180 -- angle is degree per second
+local maxAcceleration = 10
+local maxSpeed = 100 -- speed is pixels per second
 local targetRadius = 3
 local slowRadius = maxSpeed * 3 / 4
 local timeToTarget = 0.1
+local maxAngularAcceleration = 5
+local maxRotation = 360 -- angle is degree per second
+local targetAngularRadius = 5
+local slowAngularRadius = maxRotation * 3 / 4
+local timeToAngularTarget = 1
 local maxPrediction = 1
+local wanderOffset = 50
+local wanderRadius = 32
+local wanderRate = 10
+local wanderOrientation = 0
 
 -- Classes
 local seek = {}
@@ -29,6 +36,7 @@ local pursue = {}
 local evade = {}
 local face = {}
 local lookWhereYouGoing = {}
+local wander = {}
 
 -- Local Functions
 local function randomBinomial()
@@ -146,14 +154,14 @@ function align.new(param)
 	local character = param.character
 	local target = param.target
 	-- Holds max angular acceleration and rotation of the character
-	local maxAngularAcceleration = param.maxAngularAcceleration or maxAcceleration
+	local maxAngularAcceleration = param.maxAngularAcceleration or maxAngularAcceleration
 	local maxRotation = param.maxRotation or maxRotation
 	-- Holds the radius for arriving at the target
-	local targetRadius = param.targetRadius or targetRadius
+	local targetRadius = param.targetAngularRadius or targetAngularRadius
 	-- Holds the radius for beginning to slow down
-	local slowRadius = param.slowRadius or slowRadius
+	local slowRadius = param.slowAngularRadius or slowAngularRadius
 	-- Holds the time over which to achieve target speed
-	local timeToTarget = param.timeToTarget or timeToTarget
+	local timeToTarget = param.timeToAngularTarget or timeToAngularTarget
 	-- Returns the desired steering output
 	function self:getSteering()
 		-- Create the structure for the output
@@ -304,12 +312,13 @@ function face.new(param)
 		-- Check for zero direction, and make no change if so
 		if (Vector.magnitude(direction) == 0) then return nil end
 		-- Put the target together
-		local newTarget = math.deg(math.atan2(direction.y, direction.x)) % 360
-		newTarget = {rotation = newTarget, x = target.x, y = target.y}
+		local newTarget = math.deg(math.atan2(-direction.y, -direction.x))
+		newTarget = {rotation = newTarget}
 		-- Delegate to align
 		local align = align.new{character = character, target = newTarget,
 			maxAngularAcceleration = param.maxAngularAcceleration, maxRotation = param.maxRotation,
-			targetRadius = param.targetRadius, slowRadius = param.slowRadius, timeToTarget = param.timeToTarget
+			targetRadius = param.targetAngularRadius, slowRadius = param.slowAngularRadius,
+			timeToTarget = param.timeToAngularTarget
 		}
 		return align:getSteering()
 	end
@@ -326,36 +335,74 @@ function lookWhereYouGoing.new(param)
 		-- Check for zero direction, and make no change if so
 		if (Vector.magnitude(velocity) == 0) then return nil end
 		-- Put the target together
-		local newTarget = math.deg(math.atan2(velocity.y, velocity.x)) % 360
+		local newTarget = math.deg(math.atan2(-velocity.y, -velocity.x))
 		newTarget = {rotation = newTarget}
 		-- Delegate to align
 		local align = align.new{character = character, target = newTarget,
 			maxAngularAcceleration = param.maxAngularAcceleration, maxRotation = param.maxRotation,
-			targetRadius = param.targetRadius, slowRadius = param.slowRadius, timeToTarget = param.timeToTarget
+			targetRadius = param.targetAngularRadius, slowRadius = param.slowAngularRadius, 
+			timeToTarget = param.timeToAngularTarget
 		}
 		return align:getSteering()
 	end
 	return self
 end
 
-local function wander(character, target, targetRadius, slowRadius, timeToTarget)
-	
+function wander.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	-- Holds te radius and forward offset of the wander
+	local wanderOffset = param.wanderOffset or wanderOffset
+	local wanderRadius = param.wanderRadius or wanderRadius
+	-- Holds the maximum rate at which the wanter orientation can change
+	local wanderRate = param.wanderRate or wanderRate
+	-- Holds the current orientation of the wander target
+	local wanderOrientation = param.wanderOrientation or wanderOrientation
+	-- Holds the maximum acceleration of the character
+	local maxAcceleration = param.maxAcceleration or maxAcceleration
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Update the wander orientation
+		wanderOrientation = wanderOrientation + randomBinomial() * wanderRate
+		-- Calculate the combined target orientation
+		local targetOrientation = wanderOrientation + character.rotation
+		targetOrientation = Vector.fromAngle(targetOrientation)
+		targetOrientation = Vector.multiply(targetOrientation, wanderRadius)
+		-- Calculate the center of the wander circle
+		local target = Vector.fromAngle(character.rotation)
+		target = Vector.multiply(target, wanderOffset)
+		target = Vector.add(target, character)
+		-- Calculate the target location
+		target = Vector.add(target, targetOrientation)
+		-- Delegate to face
+		local face = face.new{character = character, target = target,
+			maxAngularAcceleration = param.maxAngularAcceleration, maxRotation = param.maxRotation,
+			targetRadius = param.targetAngularRadius, slowRadius = param.slowAngularRadius,
+			timeToTarget = param.timeToAngularTarget
+		}
+		local steering = face:getSteering() or {angular = 0}
+		-- Now set the linear acceleration to be at full acceleration
+		-- in the direction of the orientation
+		local linear = Vector.fromAngle(character.rotation)
+		linear = Vector.multiply(linear, maxAcceleration)
+		steering.linear = linear
+		return steering
+	end
+	return self
 end
 
+
 function Movement.new(param)
-	-- Initiate and create instance
-	local self
-	if (param.type == "rect" or param.type == nil) then
-		self = display.newRect(0,0,60,30)
-	elseif (param.type == "circ") then
-		self = display.newRect(0,0,60,30)
-	else
-		local width = param.imageWidth or 64
-		local height = param.imageHeight or 64
-		self = display.newImageRect(param.type, width, height)
-	end
-	physics.addBody( self, { density=1, friction=0.2, bounce=0.2 } )
+	local self = param.self or display.newGroup()
 	param.character = self
+	
+	-- Setup physics
+	local density = param.density or 1
+	local friction = param.friction or 0.2
+	local bounce = param.bounce or 0.2
+	local radius = param.radius
+	physics.addBody(self, {density=density, friction=friction, bounce=bounce, radius=radius})
 	
 	-- Public variables
 	self.x = param.x or display.contentWidth / 2 -- position
@@ -366,55 +413,76 @@ function Movement.new(param)
 	
 	-- Setup steering code
 	local movementType
-	if (param.move == "seek") then movementType = seek.new(param)
-	elseif (param.move == "flee") then movementType = flee.new(param)
-	elseif (param.move == "arrive") then movementType = arrive.new(param)
-	elseif (param.move == "velocityMatch") then movementType = velocityMatch.new(param)
-	elseif (param.move == "pursue") then movementType = pursue.new(param)
-	elseif (param.move == "evade") then movementType = evade.new(param)
-	elseif (param.move == "wander") then self.move = wander
-	else self.move = nil end
-	
+	local rotationType
+		
 	function self:enterFrame(event)
 		-- get steering vector
-		local steering = movementType:getSteering()
-		-- add an orientation steer
-		local aSteer = face.new(param)
-		aSteer = aSteer:getSteering()
-		if (steering and aSteer) then steering.angular = aSteer.angular
-		elseif (aSteer) then steering = aSteer 
-		else self.angularVelocity = 0 end
+		local steering, aSteering
+		if (movementType) then steering = movementType:getSteering() end
+		if (rotationType) then aSteering = rotationType:getSteering() end
+		if (aSteering) then
+			if (steering and steering.angular == 0) then
+				steering.angular = aSteering.angular
+			elseif (not(steering)) then
+				steering = aSteering
+			end
+		end
 		-- If there is a steering vector, apply and verify
 		if (steering) then
-			-- and apply velocity and torque
+			-- and apply velocity
 			self:applyForce(steering.linear.x, steering.linear.y, self.x, self.y)
-			self:applyTorque(steering.angular)
 			-- Check for speeding and clip (linear)
-			local velocity = {}
-			velocity.x, velocity.y = self:getLinearVelocity()
+			local velocity = getVelocity(self)
+			local maxSpeed = param.maxSpeed or maxSpeed
 			if (Vector.magnitude(velocity) > maxSpeed) then
 				velocity = Vector.normalize(velocity)
 				velocity = Vector.multiply(velocity, maxSpeed)
 				self:setLinearVelocity(velocity.x, velocity.y)
 			end
 			-- Check for speeding and clip (angular)
+			self:applyTorque(steering.angular)
+			local maxRotation = param.maxRotation or maxRotation
 			if (math.abs(self.angularVelocity) > maxRotation) then
-				self.angularVelocity = self.angularVelocity / math.abs(self.angularVelocity)
-				self.angularVelocity = self.angularVelocity * maxRotation
+				local sign = self.angularVelocity / math.abs(self.angularVelocity)
+				self.angularVelocity = sign * maxRotation
 			end
 		else
 			self:setLinearVelocity(0, 0)
 			self.angularVelocity = 0
 		end
 	end
+		
+	function self:setMovement(move)
+		if (move == "seek") then movementType = seek.new(param)
+		elseif (move == "flee") then movementType = flee.new(param)
+		elseif (move == "arrive") then movementType = arrive.new(param)
+		elseif (move == "velocityMatch") then movementType = velocityMatch.new(param)
+		elseif (move == "pursue") then movementType = pursue.new(param)
+		elseif (move == "evade") then movementType = evade.new(param)
+		elseif (move == "wander") then movementType = wander.new(param)
+		else movementType = nil end
+	end
 	
-	Runtime:addEventListener("enterFrame", self)
+	function self:setRotation(rotate)
+		if (rotate == "align") then rotationType = align.new(param)
+		elseif (rotate == "face") then rotationType = face.new(param)
+		elseif (rotate == "lookWhereYouGoing") then rotationType = lookWhereYouGoing.new(param)
+		else rotationType = nil end
+	end
+	
+	function self:setTarget(target)
+		param.target = target
+		self:setMovement(param.move)
+	end
 	
 	function self:delete()
 		Runtime:removeEventListener("enterFrame", self)
 		self:removeSelf()
 	end
 	
+	self:setMovement(param.move)
+	self:setRotation(param.rotate)
+	Runtime:addEventListener("enterFrame", self)
 	return self
 end
 
