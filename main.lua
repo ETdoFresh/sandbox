@@ -1,69 +1,29 @@
--- Event handling practice!
+local nGroup = display.newGroup()
 
-local stage = display.currentStage
+local dW = display.contentWidth
+local dH = display.contentHeight
 
--- Boxes Group!
-local boxes = display.newGroup()
-function boxes:test(event)
-	print("boxes: nice one!")
-end
+local bgRect = display.newRect(nGroup,0,0,dW,dH)
+local nRect1 = display.newRect(nGroup,50,50,50,50)
+local nRect2 = display.newRect(nGroup,200,100,50,50)
+local nRect3 = display.newRect(nGroup,250,420,50,50)
+bgRect:setFillColor(32,32,32)
+nRect1:setFillColor(255,0,0)
+nRect2:setFillColor(0,255,0)
+nRect3:setFillColor(0,0,255)
 
--- Box 1 Instance
-local box1 = display.newRect(boxes,50,50,100,100)
-box1:setFillColor(0,0,255)
-function box1:touch(event)
+local View = require 'View'
+local view = View:new()
+view:insert(nGroup)
+
+Runtime:addEventListener("orientation", view)
+nRect1:addEventListener("touch", nRect1)
+nGroup:addEventListener("touch", view)
+
+nRect1.touch = function (self,event)
 	if (event.phase == "began") then
-		self.isFocus = true
-		stage:setFocus (self)
-		self.parent:insert(self)
-	elseif (self.isFocus and event.phase == "moved") then
-		self.x, self.y = event.x, event.y
-	elseif (self.isFocus and event.phase == "ended" or event.phase == "cancelled") then
-		self.isFocus = false
-		stage:setFocus(nil)
+		nRect1:setReferencePoint(display.TopLeftReferencePoint)
+		view:setView(nRect1.x, nRect1.y, nRect1.width+50, nRect1.height+50, nil, 2000)
+		nRect1:setReferencePoint(display.CenterLeftReferencePoint)
 	end
 end
-function box1:msg(event)
-	print("box1: loud and clear")
-end
-
-
--- Box 2 Instance
-local box2 = display.newRect(boxes,100,100,100,100)
-box2:setFillColor(255,0,0)
-function box2:touch(event)
-	if (event.phase == "began") then
-		self.isFocus = true
-		stage:setFocus (self)
-		self.parent:insert(self)
-	elseif (self.isFocus and event.phase == "moved") then
-		self.x, self.y = event.x, event.y
-	elseif (self.isFocus and event.phase == "ended" or event.phase == "cancelled") then
-		self.isFocus = false
-		stage:setFocus(nil)
-	end
-end
-function box2:msg(event)
-	print("box2: affirmative")
-end
-
-box1:addEventListener("touch",box1)
-box2:addEventListener("touch",box2)
-boxes:addEventListener("msg",box1)
-boxes:addEventListener("msg",box2)
-box2:addEventListener("test",boxes)
-
-boxes:dispatchEvent({
-	name = "msg",
-	target = boxes,
-})
-
-box1:dispatchEvent({
-	name = "test",
-	target = box1,
-})
-
-box2:dispatchEvent({
-	name = "test",
-	target = boxes,
-})
