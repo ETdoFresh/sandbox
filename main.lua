@@ -18,6 +18,12 @@ function round(num, idp)
   return math.floor(num * mult + 0.5) / mult
 end
 
+function pixelAdd(pixels,x,y,id)
+	id = id or 1
+	pixels[x] = pixels[x] or {}
+	pixels[x][y] = id
+end
+
 -- Returns an array of pixel based on the coordinates of the line given
 function pixelsLine(x0,y0,x1,y1)
 	local pixels = {}
@@ -32,20 +38,17 @@ function pixelsLine(x0,y0,x1,y1)
 		if (x1 < x0) then inc = -1 end
 		for x = x0, x1, inc  do
 			local y = round(slope * (x - x1) + y1)
-			pixels[x] = pixels[x] or {}
-			pixels[x][y] = id
+			pixelAdd(pixels,x,y,id)
 			id = id + 1
 		end
 	elseif (math.abs(slope) > 1) then
 		if (y1 < y0) then inc = -1 end
 		for y = y0, y1, inc do
 			local x = round((y - y1) / slope + x1)
-			pixels[x] = pixels[x] or {}
-			pixels[x][y] = id
+			pixelAdd(pixels,x,y,id)
 			id = id + 1
 		end
 	end
-	visualize(pixels)
 	return pixels
 end
 
@@ -96,7 +99,7 @@ function pixelsRect(left,top,width,height,rotation)
 			for l in pairs(line2) do
 				for m,n in pairs(line2[l]) do
 					if(k == n) then
-						pixels = pixelMerge(pixels,pixelsLine(i,j,l,m))
+						pixels = pixelsMerge(pixels,pixelsLine(i,j,l,m))
 					end
 				end
 			end
@@ -105,7 +108,41 @@ function pixelsRect(left,top,width,height,rotation)
 	return pixels
 end
 
+function pixelsCirc(ctrX, ctrY, radius)
+	local pixels = {}
+	for i = 1, radius do
+		local x = 0
+		local y = i
+		local p = 3 - 2* i
+		while (y >= x) do
+			pixelAdd(pixels,ctrX-x,ctrY-y)
+			pixelAdd(pixels,ctrX-y,ctrY-x)
+			pixelAdd(pixels,ctrX+y,ctrY-x)
+			pixelAdd(pixels,ctrX+x,ctrY-y)
+			pixelAdd(pixels,ctrX-x,ctrY+y)
+			pixelAdd(pixels,ctrX-y,ctrY+x)
+			pixelAdd(pixels,ctrX+y,ctrY+x)
+			pixelAdd(pixels,ctrX+x,ctrY+y)
+			if (p < 0) then
+				p = p + 4*x + 6
+				x = x + 1
+			else
+				p = p + 4*(x - y) + 10
+				x = x + 1
+				y = y - 1
+			end
+		end
+	end
+	return pixels
+end
+
 -- Create two rectangles, and see if they collide!
-local rect1 = pixelsRect(50,50,32,2,45)
+local rect1 = pixelsCirc(50,50,45)
 local rect2 = pixelsRect(50,150,32,2,-45)
+visualize(rect1)
+for i in pairs(rect1) do
+	for j in pairs (rect1[i]) do
+		--print (i,j)
+	end
+end
 print(hitTestPixels(rect1,rect2))
