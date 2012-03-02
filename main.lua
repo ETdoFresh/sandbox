@@ -1,28 +1,24 @@
-function merge(...)
+-- Merge Pixel Tables Together
+function pixelsMerge(...)
 	local merge = {}
 	for i,v in ipairs(arg) do
 		for j,k in pairs(v) do
 			merge[j] = merge[j] or {}
 			for l,m in pairs(k) do
 				merge[j][l] = m
-				print(i,j,l)
 			end
-		end
-	end
-	for i,v in pairs(merge) do
-		for j,k in pairs(v) do
-			print(i,j)
 		end
 	end
 	return merge
 end
 
+-- Rounds a number
 function round(num, idp)
   local mult = 10^(idp or 0)
   return math.floor(num * mult + 0.5) / mult
 end
 
--- Just messing around!
+-- Returns an array of pixel based on the coordinates of the line given
 function pixelsLine(x0,y0,x1,y1)
 	local pixels = {}
 	if (x0==x1 and y0==y1) then
@@ -53,6 +49,7 @@ function pixelsLine(x0,y0,x1,y1)
 	return pixels
 end
 
+-- draws a white pixel to represent a pixel array
 function visualize(pixels)
 	for i,v in pairs(pixels) do
 		for j,k in pairs(pixels[i]) do
@@ -61,42 +58,54 @@ function visualize(pixels)
 	end
 end
 
+-- Returns true if two pixel arrays have a same a same pixel
 function hitTestPixels(pixels1, pixels2)
-	for i = 1, #pixels1 do
-		for j = 1, #pixels2 do
-			if (pixels1[i].x == pixels2[j].x and pixels1[i].y == pixels2[j].y) then
-				return true
+	for i in pairs(pixels1) do
+		for j in pairs(pixels1[i]) do
+			for k in pairs(pixels2) do
+				for l in pairs(pixels2[k]) do
+					if (i == k and j == l) then
+						return true
+					end
+				end
 			end
 		end
 	end
 	return false
 end
 
+-- Returns an array of pixels based on the coordinates of the rectangle
 function pixelsRect(left,top,width,height,rotation)
+	rotation = rotation or 0
 	local pixels = {}
 	local ctrX = round(width / 2 + left)
 	local ctrY = round(height / 2 + top)
-	local line1 = pixelsLine(ctrX,ctrY,left,top)
-	local line2 = pixelsLine(ctrX,ctrY,left+width,top)
-	local line3 = pixelsLine(ctrX,ctrY,left,top+height)
-	local line4 = pixelsLine(ctrX,ctrY,left+width,top+height)
-	local i,j
-	table.sort(line2,line2)
-	for i in pairs(line2) do
-		for j in pairs(line2[i]) do
-			print(i,j)
+	local radian = rotation*math.pi/180
+	local tlX = round(ctrX + (left - ctrX)*math.cos(radian) + (top - ctrY)*math.sin(radian))
+	local tlY = round(ctrY - (left - ctrX)*math.sin(radian) + (top - ctrY)*math.cos(radian))
+	local blX = round(ctrX + (left - ctrX)*math.cos(radian) + (top + height - ctrY)*math.sin(radian))
+	local blY = round(ctrY - (left - ctrX)*math.sin(radian) + (top + height - ctrY)*math.cos(radian))
+	local trX = round(ctrX + (left + width - ctrX)*math.cos(radian) + (top - ctrY)*math.sin(radian))
+	local trY = round(ctrY - (left + width - ctrX)*math.sin(radian) + (top - ctrY)*math.cos(radian))
+	local brX = round(ctrX + (left + width - ctrX)*math.cos(radian) + (top + height - ctrY)*math.sin(radian))
+	local brY = round(ctrY - (left + width - ctrX)*math.sin(radian) + (top + height - ctrY)*math.cos(radian))
+	local line1 = pixelsLine(tlX,tlY,blX,blY)
+	local line2 = pixelsLine(trX,trY,brX,brY)
+	for i in pairs(line1) do
+		for j,k in pairs(line1[i]) do
+			for l in pairs(line2) do
+				for m,n in pairs(line2[l]) do
+					if(k == n) then
+						pixels = pixelMerge(pixels,pixelsLine(i,j,l,m))
+					end
+				end
+			end
 		end
 	end
-	print(i,j)
 	return pixels
 end
 
-local rect1 = pixelsRect(0,0,10,10)
-local rect2 = pixelsLine(10,5,10,30)
-for i,v in pairs(rect1) do
-	for j,k in pairs(v) do
-		print(i,j,k,v)
-	end
-end
---local concat = merge(rect1,rect2)
---print(#rect1,#rect2,#concat)
+-- Create two rectangles, and see if they collide!
+local rect1 = pixelsRect(50,50,32,2,45)
+local rect2 = pixelsRect(50,150,32,2,-45)
+print(hitTestPixels(rect1,rect2))
