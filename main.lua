@@ -1,7 +1,12 @@
--- Prototype Game of Guerra using only images and touch event
-local Debug = require 'Debug'
+local rect = display.newRect(50,50,100,100)
+print(rect.x,rect.y)
 
--- Global Definitions
-
--- FPS Text
-Debug.addGfx()
+print(rect.x,rect.y)
+rect.enterFrame = function (event) 
+	local x,y = rect.x,rect.y
+	rect.width = rect.width+1
+	rect:setReferencePoint(display.TopLeftReferencePoint)
+	rect.x,rect.y = x,y
+	print(rect.x)
+end
+Runtime:addEventListener("enterFrame",rect)
