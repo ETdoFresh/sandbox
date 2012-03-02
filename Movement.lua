@@ -1,121 +1,341 @@
+--==============================
+-- Movement
+-- A "physics required" movement engine
+-- by E.T. Garcia
+-- reference Artificial Intelligence for Games 2nd Ed by Millington and Funge
+--==============================
 local Movement = {}
 
-function randomBinomial()
+-- Require Vector functions
+local Vector = require "Vector"
+
+-- Default Values
+local maxAcceleration = 20
+local maxAngularAcceleration = 10
+local maxSpeed = 150 -- speed is pixels per second
+local maxRotation = 180 -- angle is degree per second
+local targetRadius = 3
+local slowRadius = maxSpeed * 3 / 4
+local timeToTarget = 0.1
+local maxPrediction = 1
+
+-- Classes
+local seek = {}
+local flee = {}
+local arrive = {}
+local align = {}
+local velocityMatch = {}
+local pursue = {}
+local evade = {}
+local face = {}
+local lookWhereYouGoing = {}
+
+-- Local Functions
+local function randomBinomial()
 	return math.random() - math.random()
 end
 
-local function seek(character, target)
-	-- Get the direction to the target
-	local steering = vectSub(target, character)
-	-- Give full acceleration along this direction
-	steering = vectNormalize(steering)
-	steering = vectMultiply(steering, character.maxAcceleration)
-	steering.angular = 0
-	return steering
+local function getVelocity(object)
+	local velocity = {x = 0, y = 0}
+	if (object.isBodyActive) then velocity.x, velocity.y = object:getLinearVelocity()
+	elseif (object.velocity) then velocity = object.velocity end
+	return velocity
 end
 
-local function flee(character, target)
-	-- Get the direction to the target
-	local steering = vectSub(character, target)
-	-- Give full acceleration along this direction
-	steering = vectNormalize(steering)
-	steering = vectMultiply(steering, character.maxAcceleration)
-	steering.angularVelocity = 0
-	return steering
+-- Class Functions
+function seek.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the maximum speed the character can travel
+	local maxAcceleration = param.maxAcceleration or maxAcceleration
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Create the structure for the output
+		local steering = {linear = {x = 0, y = 0}, angular = 0}
+		-- Get the direction to the target
+		local linear = Vector.subtract(target, character)
+		-- Give full acceleration along this direction
+		linear = Vector.normalize(linear)
+		linear = Vector.multiply(linear, maxAcceleration)
+		steering.linear = linear
+		return steering
+	end
+	return self
 end
 
-local function arrive(character, target, targetRadius, slowRadius, timeToTarget)
-	targetRadius = targetRadius or 5 -- Holds the radius for arriving at the target
-	slowRadius = slowRadius or character.maxSpeed -- Holds the radius for beginning to slow down
-	timeToTarget = timeToTarget or 0.1 -- Holds the time over which to achieve target speed
-	-- Get the direction to the target
-	local direction = vectSub(target, character)
-	local distance = vectMagnitude(direction)
-	-- Check if we are there, return no steering
-	if (distance < targetRadius) then
-		return nil
+function flee.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the maximum speed the character can travel
+	local maxAcceleration = param.maxAcceleration or maxAcceleration
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Create the structure for the output
+		local steering = {linear = {x = 0, y = 0}, angular = 0}
+		-- Get the direction away from the target
+		local linear = Vector.subtract(character, target)
+		-- Give full acceleration along this direction
+		linear = Vector.normalize(linear)
+		linear = Vector.multiply(linear, maxAcceleration)
+		steering.linear = linear
+		return steering
 	end
-	-- If we are outside the slowRadius, then go max speed
-	local targetSpeed
-	if (distance > slowRadius) then
-		targetSpeed = character.maxSpeed
-	-- Otherwise calculate a scaled speed
-	else
-		targetSpeed = character.maxSpeed * distance / slowRadius
-	end
-	-- The target velocity combines speed and direction
-	local targetVelocity = direction
-	targetVelocity = vectNormalize(targetVelocity)
-	targetVelocity = vectMultiply(targetVelocity, targetSpeed)
-	-- Acceleration tries to get to the target velocity
-	local velocity = {}
-	velocity.x, velocity.y = character:getLinearVelocity()
-	local steering = vectSub(targetVelocity, velocity)
-	steering = vectDivide(steering, timeToTarget)
-	-- Check if the acceleration is too fast
-	local acceleration = vectMagnitude(steering)
-	if (acceleration > character.maxAcceleration) then
-		steering = vectNormalize(steering)
-		steering = vectMultiply(steering, character.maxAcceleration)
-	end
-	steering.angularVelocity = 0
-	return steering
+	return self
 end
 
-local function align(character, target, targetRadius, slowRadius, timeToTarget)
-	targetRadius = targetRadius or 1 -- Holds the radius for arriving at the target
-	slowRadius = slowRadius or character.maxRotation -- Holds the radius for beginning to slow down
-	timeToTarget = timeToTarget or 0.01 -- Holds the time over which to achieve target speed
-	--Get the native direction to the target
-	local rotation = target.rotation - character.rotation
-	-- Map result to the (-180, 180) interval
-	rotation = (rotation % 360) - 180
-	rotationSize = math.abs(rotation)
-	-- Check if we are there, return no steering
-	if (rotationSize < targetRadius) then
-		return nil
+function arrive.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the maximum acceleration and speed the character can travel
+	local maxAcceleration = param.maxAcceleration or maxAcceleration
+	local maxSpeed = param.maxSpeed or maxSpeed
+	-- Holds the radius for arriving at the target
+	local targetRadius = param.targetRadius or targetRadius
+	-- Holds the radius for beginning to slow down
+	local slowRadius = param.slowRadius or slowRadius
+	-- Holds the time over which to achieve target speed
+	local timeToTarget = param.timeToTarget or timeToTarget
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Create the structure for the output
+		local steering = {linear = {x = 0, y = 0}, angular = 0}
+		-- Get the direction to the target
+		local direction = Vector.subtract(target, character)
+		local distance = Vector.magnitude(direction)
+		-- Check if we are there, return blank steering
+		if (distance < targetRadius) then
+			return nil
+		end
+		-- If we are outside the slowRadius, then go max speed
+		local targetSpeed
+		if (distance > slowRadius) then
+			targetSpeed = maxSpeed
+		-- Otherwise calculate a scaled speed
+		else
+			targetSpeed = maxSpeed * distance / slowRadius
+		end
+		-- The target velocity combines speed and direction
+		local targetVelocity = direction
+		targetVelocity = Vector.normalize(targetVelocity)
+		targetVelocity = Vector.multiply(targetVelocity, targetSpeed)
+		-- Acceleration tries to get to the target velocity
+		local velocity = getVelocity(character)
+		local linear = Vector.subtract(targetVelocity, velocity)
+		linear = Vector.divide(linear, timeToTarget)
+		-- Check if the acceleration is too fast
+		local acceleration = Vector.magnitude(linear)
+		if (acceleration > maxAcceleration) then
+			linear = Vector.normalize(linear)
+			linear = Vector.multiply(linear, maxAcceleration)
+		end
+		steering.linear = linear
+		return steering
 	end
-	-- If we are outside the slowRadius, then use maximum rotation
-	local targetRotation
-	if (rotationSize > slowRadius) then
-		targetRotation = character.maxRotation
-	-- Otherwise calculate a scaled rotation
-	else
-		targetRotation = character.maxRotation * rotationSize / slowRadius
-	end
-	-- The final target rotation combines speed and direction
-	targetRotation = targetRotation * rotation / rotationSize
-	-- Acceleration tried to get to the target rotation
-	local steering = targetRotation - character.angularVelocity
-	steering = steering / timeToTarget
-	-- Check if the acceleration is too great
-	local angularAcceleration = math.abs(steering)
-	if (angularAcceleration > character.maxAngularAcceleration) then
-		steering = steering / angularAcceleration
-		steering = steering * character.maxAngularAcceleration
-	end
-	return steering
+	return self
 end
 
-local function face(character, target, targetRadius, slowRadius, timeToTarget)
-	-- Work out direction to target
-	local direction = vectSub(target, character)
-	local distance = vectMagnitude(direction)
-	-- Check for zero direction, and make no change if so
-	if (distance == 0) then return nil end
-	-- Put the target together
-	local newTarget = {rotation = math.deg(math.atan2(direction.y, direction.x))}
-	return align(character, newTarget, targetRadius, slowRadius, timeToTarget)
+function align.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds max angular acceleration and rotation of the character
+	local maxAngularAcceleration = param.maxAngularAcceleration or maxAcceleration
+	local maxRotation = param.maxRotation or maxRotation
+	-- Holds the radius for arriving at the target
+	local targetRadius = param.targetRadius or targetRadius
+	-- Holds the radius for beginning to slow down
+	local slowRadius = param.slowRadius or slowRadius
+	-- Holds the time over which to achieve target speed
+	local timeToTarget = param.timeToTarget or timeToTarget
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Create the structure for the output
+		local steering = {linear = {x = 0, y = 0}, angular = 0}
+		--Get the native direction to the target
+		local rotation = target.rotation - character.rotation
+		-- Map result to the (-180, 180) interval
+		rotation = (rotation % 360) - 180
+		rotationSize = math.abs(rotation)
+		-- Check if we are there, return no steering
+		if (rotationSize < targetRadius) then
+			return nil
+		end
+		-- If we are outside the slowRadius, then use maximum rotation
+		local targetRotation
+		if (rotationSize > slowRadius) then
+			targetRotation = maxRotation
+		-- Otherwise calculate a scaled rotation
+		else
+			targetRotation = maxRotation * rotationSize / slowRadius
+		end
+		-- The final target rotation combines speed and direction
+		targetRotation = targetRotation * rotation / rotationSize
+		-- Acceleration tried to get to the target rotation
+		local angular = targetRotation - character.angularVelocity
+		angular = angular / timeToTarget
+		-- Check if the acceleration is too great
+		local angularAcceleration = math.abs(angular)
+		if (angularAcceleration > maxAngularAcceleration) then
+			angular = angular / angularAcceleration
+			angular = angular * maxAngularAcceleration
+		end
+		steering.angular = angular
+		return steering
+	end
+	return self
 end
 
-local function lookWhereYouGoing(character, target, targetRadius, slowRadius, timeToTarget)
-	-- Check for zero direction, and make no change if so
-	if (distance == 0) then return nil end
-	-- Put the target together
-	local velocity = {}
-	velocity.x, velocity.y = character:getLinearVelocity()
-	local newTarget = {rotation = math.deg(math.atan2(velocity.y, velocity.x))}
-	return align(character, newTarget, targetRadius, slowRadius, timeToTarget)
+function velocityMatch.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds max acceleration of the character
+	local maxAcceleration = param.maxAcceleration or maxAcceleration
+	-- Holds the time over which to achieve target speed
+	local timeToTarget = param.timeToTarget or timeToTarget
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Create the structure for the output
+		local steering = {linear = {x = 0, y = 0}, angular = 0}
+		-- Acceleration tried to get to the target velocity
+		local tVelocity = getVelocity(target)
+		local velocity = getVelocity(character)
+		local linear = Vector.subtract(tVelocity, velocity)
+		linear = Vector.divide(linear, timeToTarget)
+		-- Check if the acceleration is too fast
+		local acceleration = Vector.magnitude(linear)
+		if (acceleration > maxAcceleration) then
+			linear = Vector.normalize(linear)
+			linear = Vector.multiply(linear, maxAcceleration)
+		end
+		steering.linear = linear
+		return steering
+	end
+	return self
+end
+
+function pursue.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the maximum prediction time
+	local maxPrediction = param.maxPrediction or maxPrediction
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Work out the distance to target
+		local direction = Vector.subtract(target, character)
+		local distance = Vector.magnitude(direction)
+		-- Work out our current speed
+		local speed = getVelocity(character)
+		speed = Vector.magnitude(speed)
+		-- Check if speed is too small to give a reasonable prediction time
+		local prediction
+		if (speed <= distance / maxPrediction) then
+			prediction = maxPrediction
+		-- Otherwise calculate the prediction time
+		else
+			prediction = distance / speed
+		end
+		-- Put the target together
+		local newTarget = getVelocity(target)
+		newTarget = Vector.multiply(newTarget, prediction)
+		newTarget = Vector.add(newTarget, target)
+		param.target = newTarget
+		-- Delegate to seek
+		local seek = seek.new(param)
+		return seek:getSteering()
+	end
+	return self
+end
+
+function evade.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the maximum prediction time
+	local maxPrediction = param.maxPrediction or maxPrediction
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Work out the distance to target
+		local direction = Vector.subtract(target, character)
+		local distance = Vector.magnitude(direction)
+		-- Work out our current speed
+		local speed = getVelocity(character)
+		speed = Vector.magnitude(speed)
+		-- Check if speed is too small to give a reasonable prediction time
+		local prediction
+		if (speed <= distance / maxPrediction) then
+			prediction = maxPrediction
+		-- Otherwise calculate the prediction time
+		else
+			prediction = distance / speed
+		end
+		-- Put the target together
+		local newTarget = getVelocity(target)
+		newTarget = Vector.multiply(newTarget, prediction)
+		newTarget = Vector.add(newTarget, target)
+		param.target = newTarget
+		-- Delegate to flee
+		local flee = flee.new(param)
+		return flee:getSteering()
+	end
+	return self
+end
+
+function face.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Work out direction to target
+		local direction = Vector.subtract(target, character)
+		-- Check for zero direction, and make no change if so
+		if (Vector.magnitude(direction) == 0) then return nil end
+		-- Put the target together
+		local newTarget = math.deg(math.atan2(direction.y, direction.x)) % 360
+		newTarget = {rotation = newTarget, x = target.x, y = target.y}
+		-- Delegate to align
+		local align = align.new{character = character, target = newTarget,
+			maxAngularAcceleration = param.maxAngularAcceleration, maxRotation = param.maxRotation,
+			targetRadius = param.targetRadius, slowRadius = param.slowRadius, timeToTarget = param.timeToTarget
+		}
+		return align:getSteering()
+	end
+	return self
+end
+
+function lookWhereYouGoing.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	-- Returns the desired steering output
+	function self:getSteering()
+		local velocity = getVelocity(character)
+		-- Check for zero direction, and make no change if so
+		if (Vector.magnitude(velocity) == 0) then return nil end
+		-- Put the target together
+		local newTarget = math.deg(math.atan2(velocity.y, velocity.x)) % 360
+		newTarget = {rotation = newTarget}
+		-- Delegate to align
+		local align = align.new{character = character, target = newTarget,
+			maxAngularAcceleration = param.maxAngularAcceleration, maxRotation = param.maxRotation,
+			targetRadius = param.targetRadius, slowRadius = param.slowRadius, timeToTarget = param.timeToTarget
+		}
+		return align:getSteering()
+	end
+	return self
 end
 
 local function wander(character, target, targetRadius, slowRadius, timeToTarget)
@@ -123,37 +343,69 @@ local function wander(character, target, targetRadius, slowRadius, timeToTarget)
 end
 
 function Movement.new(param)
-	local self = display.newRect(0,0,60,30)
+	-- Initiate and create instance
+	local self
+	if (param.type == "rect" or param.type == nil) then
+		self = display.newRect(0,0,60,30)
+	elseif (param.type == "circ") then
+		self = display.newRect(0,0,60,30)
+	else
+		local width = param.imageWidth or 64
+		local height = param.imageHeight or 64
+		self = display.newImageRect(param.type, width, height)
+	end
 	physics.addBody( self, { density=1, friction=0.2, bounce=0.2 } )
-	self.x = param.x or self.width / 2
-	self.y = param.y or self.height / 2
+	param.character = self
+	
+	-- Public variables
+	self.x = param.x or display.contentWidth / 2 -- position
+	self.y = param.y or display.contentHeight / 2
 	self.rotation = param.rotation or 0 -- orientation
 	--velocity defined by self:getLinearVelocity()
-	--rotation defined by self:getAngularVelocity()	
-	self.maxAcceleration = param.maxAcceleration or 5
-	self.maxAngularAcceleration = param.maxAngularAcceleration or 20
-	self.maxSpeed = param.maxSpeed or 100 -- speed is pixels per frame (based on 30 fps)
-	self.maxRotation = param.maxRotation or 360 -- angle is degree per frame
-	self.movementType = seek
-	self.target = param.target
-	self.targetRadius = param.targetRadius or 1
-	self.framesToTarget = param.framesToTarget or 5
+	--rotation defined by self.angularVelocity
 	
-	local lastTime = system.getTimer()
+	-- Setup steering code
+	local movementType
+	if (param.move == "seek") then movementType = seek.new(param)
+	elseif (param.move == "flee") then movementType = flee.new(param)
+	elseif (param.move == "arrive") then movementType = arrive.new(param)
+	elseif (param.move == "velocityMatch") then movementType = velocityMatch.new(param)
+	elseif (param.move == "pursue") then movementType = pursue.new(param)
+	elseif (param.move == "evade") then movementType = evade.new(param)
+	elseif (param.move == "wander") then self.move = wander
+	else self.move = nil end
+	
 	function self:enterFrame(event)
-		-- Get time passed since last event
-		local time = (event.time - lastTime) / 1000 * 30 -- 1/30 second
-		lastTime = event.time
-		-- Update the position and rotation
-		local position = {x = self.x, y = self.y}
-		position = Vector.add(position, Vector.multiply(self.velocity,time))
-		self.x, self.y = position.x, position.y
-		self.rotation = self.rotation + self.angularVelocity * time
 		-- get steering vector
-		local steering = self.movementType(self, self.target)
-		-- and the velocity and angularVelocity
-		self.velocity = Vector.multiply(steering.linear, time)
-		self.angularVelocity = steering.angular * time
+		local steering = movementType:getSteering()
+		-- add an orientation steer
+		local aSteer = face.new(param)
+		aSteer = aSteer:getSteering()
+		if (steering and aSteer) then steering.angular = aSteer.angular
+		elseif (aSteer) then steering = aSteer 
+		else self.angularVelocity = 0 end
+		-- If there is a steering vector, apply and verify
+		if (steering) then
+			-- and apply velocity and torque
+			self:applyForce(steering.linear.x, steering.linear.y, self.x, self.y)
+			self:applyTorque(steering.angular)
+			-- Check for speeding and clip (linear)
+			local velocity = {}
+			velocity.x, velocity.y = self:getLinearVelocity()
+			if (Vector.magnitude(velocity) > maxSpeed) then
+				velocity = Vector.normalize(velocity)
+				velocity = Vector.multiply(velocity, maxSpeed)
+				self:setLinearVelocity(velocity.x, velocity.y)
+			end
+			-- Check for speeding and clip (angular)
+			if (math.abs(self.angularVelocity) > maxRotation) then
+				self.angularVelocity = self.angularVelocity / math.abs(self.angularVelocity)
+				self.angularVelocity = self.angularVelocity * maxRotation
+			end
+		else
+			self:setLinearVelocity(0, 0)
+			self.angularVelocity = 0
+		end
 	end
 	
 	Runtime:addEventListener("enterFrame", self)

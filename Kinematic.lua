@@ -9,7 +9,7 @@ local Kinematic = {}
 -- Require Vector functions
 local Vector = require "Vector"
 
-function randomBinomial()
+local function randomBinomial()
 	return math.random() - math.random()
 end
 
@@ -153,7 +153,7 @@ function Kinematic.new(param)
 		self.rotation = self.rotation + self.angularVelocity * time
 		if (self.move) then
 			-- get steering vector
-			local steering = self.move(self, self.target)
+			local steering = self.move(self)
 			-- and the velocity and angularVelocity
 			self.velocity = Vector.multiply(steering.linear, time)
 			self.angularVelocity = steering.angular * time

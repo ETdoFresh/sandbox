@@ -2,7 +2,7 @@ display.setStatusBar( display.HiddenStatusBar )  -- hide the status bar
 
 -- Required files to run this code
 local physics = require "physics"
-local Kinematic = require "Kinematic"
+local Movement = require "Movement"
 
 -- Start physics simulation
 physics.start()
@@ -40,16 +40,4 @@ Runtime:addEventListener("tap", moveTarget)
 
 -- Create an object to perform event
 
-local newObject = Kinematic.new{x = 20, y = 300, target = target, move = "seek"}
-
-
--- Restart object every 5 seconds with a differnt move type
-local moves = {"seek", "flee", "arrive", "wander"}
-local i = 2
-local function deleteMe(event)
-	newObject:delete()
-	newObject = Kinematic.new{x = math.random(display.contentWidth), y = math.random(display.contentHeight),
-		target = target, move = moves[i]}
-	i = (i % 4) + 1
-end
-timer.performWithDelay(5000,deleteMe,0)
+local newObject = Movement.new{target = target, move = "arrive"}
