@@ -45,7 +45,7 @@ end
 
 -- Returns a degrees from a vector
 function Vector.toAngle(v1)
-	return math.deg(math.atan2(-v1.y, -v1.x))
+	return math.deg(math.atan2(v1.y, v1.x))
 end
 
 return Vector

@@ -30,16 +30,19 @@ physics.addBody(borderRight, "static", borderBody)
 -- Object creation
 --==============================
 -- Create an object to perform event
-local newObject = Steering.new{radius = 16, density = 1}
+local newObject = Steering.new{radius = 16, maxTorque = 30, maxRotation = 200}
 display.newImageRect(newObject, "character-01.png", 61, 61)
 newObject.x, newObject.y = 30,30
-newObject:setTarget({x = 0, y = 0})
-newObject:setSteering("arrive")
+newObject:setTarget({x = 0, y = 0, rotation = 0})
+newObject:setSteering("combine")
 
-local newObject2 = Steering.new{radius = 16, target = newObject, maxSpeed = 20, targetRadius = 40}
+local newObject2 = Steering.new{radius = 16, target = newObject, maxSpeed = 20}
 display.newImageRect(newObject2, "character-02.png", 61, 61)
 newObject2.x, newObject2.y = 60,60
-newObject2:setSteering("pursue")
+newObject2:setSteering("combine")
 
-local function changeTarget(event) newObject:setTarget({x = event.x, y = event.y}) end
+local function changeTarget(event)
+	local rotation = math.random(360)
+	newObject:setTarget({x = event.x, y = event.y, rotation = rotation})
+end
 Runtime:addEventListener("tap", changeTarget)
