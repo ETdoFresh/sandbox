@@ -54,11 +54,11 @@ end
 -- Object creation
 --==============================
 -- Create an object to perform event
-local newObject = Steering.new{radius = 16, maxTorque = 30, maxRotation = 200}
+local newObject = Steering.new{radius = 16, maxSpeed = 50, maxAcceleration = 10, maxTorque = 30, maxRotation = 200, targetRadius = 50/3}
 display.newImageRect(newObject, "character-01.png", 61, 61)
 newObject.x, newObject.y = 30,30
 newObject:setTarget({x = 0, y = 0, rotation = 0})
-newObject:setSteering("combine")
+newObject:setSteering("wander")
 
 local newObject2 = Steering.new{radius = 16, target = newObject, maxSpeed = 20}
 display.newImageRect(newObject2, "character-02.png", 61, 61)
@@ -82,15 +82,13 @@ end
 local path
 local function drawPath(event)
 	if (event.phase == "began") then
-		local i = newObject.i or 1
-		newObject:setTarget(newObject2)
-		newObject:setSteering(moves[i])
+		newObject:setSteering("wander")
 		if (path) then path:removeSelf() end
 		path = Path.new{start = {x = event.x, y = event.y}}
 	elseif (event.phase == "moved") then
 		path:append{x = event.x, y = event.y}
 	elseif (event.phase == "ended") then
-		path:simplify()
+		path:simplify{dist = 15, iterations = 2}
 		newObject:setTarget(path)
 		newObject:setSteering("followPath")
 	end

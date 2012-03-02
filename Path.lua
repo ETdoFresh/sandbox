@@ -16,6 +16,7 @@ function Path.new(param)
 	--==============================
 	local sum = {} -- An aggregate sum of distances by each point
 	local gfx -- Will contain graphic
+	local gfxPts -- Will contain circle for each point on curve
 	local radius = 5 -- How close object has to be to get next param
 	local hasChanged = false -- Updates graphic if changed
 	
@@ -71,12 +72,35 @@ function Path.new(param)
 		return results
 	end
 	
+	-- Returns square distance (faster than regular distance)
+	local function squareDistance(pointA, pointB)
+		local dx = pointA.x - pointB.x
+		local dy = pointA.y - pointB.y
+		return dx*dx + dy*dy
+	end
+	
+	-- Simplifies the path by eliminating points that are too close
+	local function removeClutter(pts, distance)
+		local newPoints = {}
+		table.insert(newPoints, pts[1])
+		local lastPoint = pts[1]
+		
+		local squareDist = distance*distance
+		for i = 2, #pts do
+			if (squareDistance(pts[i], lastPoint) >= squareDist) then
+				table.insert(newPoints, pts[i])
+				lastPoint = pts[i]
+			end
+		end
+		return newPoints
+	end
+	
 	--==============================
 	-- Public Functions
 	--==============================
 	function self:append(point)
+		hasChanged = true
 		if (#self > 0) then
-			hasChanged = true
 			local distance = Vector.subtract(point, self[#self])
 			distance = Vector.magnitude(distance)
 			distance = distance + sum[#sum]
@@ -90,33 +114,50 @@ function Path.new(param)
 	function self:removeSelf()
 		Runtime:removeEventListener("enterFrame", self)
 		if (gfx) then gfx:removeSelf() end
+		if (gfxPts) then gfxPts:removeSelf() end
+		gfx = nil
+		gfxPts = nil
 		self = nil
 	end
 	
 	function self:enterFrame(event)
 		if (hasChanged == false) then return true end
-		hasMoved = false
-		if (gfx) then gfx:removeSelf() end
+		hasChanged = false
+		if (gfx) then gfx:removeSelf(); gfx = nil end
 		
+		-- Draw the line
 		if (#self > 1) then
 			gfx = display.newLine(self[1].x, self[1].y, self[2].x, self[2].y)
 			for i = 3, #self do
 				gfx:append(self[i].x, self[i].y)
 			end
 			gfx:setColor(255,255,0)
-			gfx.width = 12
+			gfx.width = 4
+		end
+		-- Draw the points
+		if (gfxPts) then gfxPts:removeSelf(); gfxPts = nil end
+		gfxPts = display.newGroup()
+		for i = 1, #self do
+			local pt = display.newCircle(self[i].x, self[i].y, 4)
+			pt:setFillColor(255,0,0)
+			gfxPts:insert(pt)
 		end
 	end
 	
-	function self:simplify()
-		local pts = DouglasPeucker(self, 1)
-		pts = DouglasPeucker(pts, 1)
+	function self:simplify(param)
+		local dist = param.dist or 10
+		local iterations = param.iterations or 2
+		local pts = removeClutter(self, dist)
+		for i = 1, iterations do
+			pts = DouglasPeucker(pts, 1)
+		end
 		while #self > 0 do
 			table.remove(self, 1)
 		end
 		for i = 1, #pts do
 			table.insert(self, pts[i])
 		end
+		hasChanged = true
 	end
 	
 	function self:getParam(object, lastParam)
@@ -138,6 +179,7 @@ function Path.new(param)
 	if (param.start) then
 		table.insert(self, param.start)
 		table.insert(sum, 0)
+		hasChanged = true
 	end
 	Runtime:addEventListener("enterFrame", self)
 	

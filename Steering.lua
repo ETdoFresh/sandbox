@@ -308,18 +308,24 @@ end
 
 function FollowPath.new(param)
 	local self = {}
-	local Seek = Arrive.new(param)
+	local Seek = Seek.new(param)
 	local Look = LookWhereYoureGoing.new(param)
 	self.character = param.character -- Holds the static data for the character
 	self.path = param.target -- Holds the path to follow
-	self.pathOffset = param.pathOffset -- Holds the distance along the path
-	self.currentParam = param.currentParam -- Holds the current position on the path
+	self.index = param.index or 1 -- Holds the current position on the path
+	self.targetRadius = param.targetRadius or targetRadius -- Holds the radius for arriving at the target
 	
 	function self:getSteering()
-		local character, path, pathOffset = self.character, self.path, self.pathOffset
-		self.currentParam = path:getParam(character, self.currentParam)
-		local targetParam = self.currentParam + pathOffset
-		Seek.target = path:getPosition(targetParam)
+		local character, path, index = self.character, self.path, self.index
+		if (index > #path) then return nil end -- Slow down if you are finished with the path
+		local waypoint = path[index] -- Get the current waypoint
+		local dist = Vector.subtract(character,waypoint) -- Get distance from waypoint
+		dist = Vector.magnitude(dist)
+		if (dist < targetRadius) then -- If you are within range, go to next waypoint
+			self.index = self.index + 1
+			return nil
+		end
+		Seek.target = waypoint
 		local steering = Seek:getSteering()
 		local steering2 = Look:getSteering()
 		if (steering and steering2) then steering.angular = steering2.angular end
@@ -335,9 +341,9 @@ function Steering.new(param)
 	
 	function self:enterFrame(event)
 		local steering = steeringType:getSteering()
+		local velocity = getVelocity(self)
 		if (steering) then
 			-- Set Linear Velocity
-			local velocity = getVelocity(self)
 			velocity = Vector.add(velocity, steering.linear)
 			local maxSpeed = param.maxSpeed or maxSpeed
 			if (Vector.magnitude(velocity) > maxSpeed) then
@@ -354,7 +360,17 @@ function Steering.new(param)
 			end
 			self.angularVelocity = velocity
 		else
-			self:setLinearVelocity(0, 0)
+			local maxAcceleration = param.maxAcceleration or maxAcceleration
+			local magnitude = Vector.magnitude(velocity)
+			if (magnitude > 0 and magnitude <= maxAcceleration) then
+				self:setLinearVelocity(0, 0)
+			elseif (magnitude > 0) then
+				local desiredVelocity = Vector.subtract({x = 0, y = 0}, velocity)
+				desiredVelocity = Vector.normalize(desiredVelocity)
+				desiredVelocity = Vector.multiply(desiredVelocity, maxAcceleration)
+				velocity = Vector.add(velocity, desiredVelocity)
+				self:setLinearVelocity(velocity.x, velocity.y)
+			end
 			self.angularVelocity = 0
 		end
 	end
