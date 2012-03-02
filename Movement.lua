@@ -15,16 +15,17 @@ local maxSpeed = 100 -- speed is pixels per second
 local targetRadius = 3
 local slowRadius = maxSpeed * 3 / 4
 local timeToTarget = 0.1
-local maxAngularAcceleration = 5
+local maxAngularAcceleration = 10/30 -- angle in degree per frame
 local maxRotation = 360 -- angle is degree per second
 local targetAngularRadius = 5
 local slowAngularRadius = maxRotation * 3 / 4
 local timeToAngularTarget = 1
 local maxPrediction = 1
-local wanderOffset = 50
-local wanderRadius = 32
-local wanderRate = 10
+local wanderOffset = 64
+local wanderRadius = 64
+local wanderRate = 32
 local wanderOrientation = 0
+local pathOffset = 1
 
 -- Classes
 local seek = {}
@@ -37,6 +38,7 @@ local evade = {}
 local face = {}
 local lookWhereYouGoing = {}
 local wander = {}
+local followPath = {}
 
 -- Local Functions
 local function randomBinomial()
@@ -257,9 +259,8 @@ function pursue.new(param)
 		local newTarget = getVelocity(target)
 		newTarget = Vector.multiply(newTarget, prediction)
 		newTarget = Vector.add(newTarget, target)
-		param.target = newTarget
 		-- Delegate to seek
-		local seek = seek.new(param)
+		local seek = seek.new{character = character, target = newTarget, maxAcceleration = param.maxAcceleration}
 		return seek:getSteering()
 	end
 	return self
@@ -292,9 +293,8 @@ function evade.new(param)
 		local newTarget = getVelocity(target)
 		newTarget = Vector.multiply(newTarget, prediction)
 		newTarget = Vector.add(newTarget, target)
-		param.target = newTarget
 		-- Delegate to flee
-		local flee = flee.new(param)
+		local flee = flee.new{character = character, target = newTarget, maxAcceleration = param.maxAcceleration}
 		return flee:getSteering()
 	end
 	return self
@@ -392,6 +392,31 @@ function wander.new(param)
 	return self
 end
 
+function followPath.new(param)
+	local self = {}
+	-- Holds the static data for the character and target
+	local character = param.character
+	local target = param.target
+	-- Holds the path to follow
+	local path = param.path
+	-- Holds the distance along the path to generate the target
+	local pathOffset = param.pathOffset or pathOffset
+	-- Holds the current position on the path
+	local currentParam
+	-- Returns the desired steering output
+	function self:getSteering()
+		-- Find the current position on the path
+		currentParam = path:getParam(character, currentParam)
+		-- Offset it
+		targetParam = currentParam + pathOffset
+		-- Get the target position
+		local newTarget = path:getPosition(targetParam)
+		-- Delegate to seek
+		local seek = seek.new{character = character, target = newTarget, maxAcceleration = param.maxAcceleration}
+		return seek:getSteering()
+	end
+	return self
+end
 
 function Movement.new(param)
 	local self = param.self or display.newGroup()
@@ -473,6 +498,11 @@ function Movement.new(param)
 	function self:setTarget(target)
 		param.target = target
 		self:setMovement(param.move)
+	end
+	
+	function self:setPath(path)
+		param.path = path
+		movementType = followPath.new(param)
 	end
 	
 	function self:delete()
