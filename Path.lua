@@ -95,32 +95,8 @@ function Path.new(param)
 		return newPoints
 	end
 	
-	--==============================
-	-- Public Functions
-	--==============================
-	function self:append(point)
-		hasChanged = true
-		if (#self > 0) then
-			local distance = Vector.subtract(point, self[#self])
-			distance = Vector.magnitude(distance)
-			distance = distance + sum[#sum]
-			table.insert(sum, distance)
-		else
-			table.insert(sum, 0)
-		end
-		table.insert(self, point)
-	end
-	
-	function self:removeSelf()
-		Runtime:removeEventListener("enterFrame", self)
-		if (gfx) then gfx:removeSelf() end
-		if (gfxPts) then gfxPts:removeSelf() end
-		gfx = nil
-		gfxPts = nil
-		self = nil
-	end
-	
-	function self:enterFrame(event)
+	-- updates the drawing
+	local function update(runtime, event)
 		if (hasChanged == false) then return true end
 		hasChanged = false
 		if (gfx) then gfx:removeSelf(); gfx = nil end
@@ -142,6 +118,31 @@ function Path.new(param)
 			pt:setFillColor(255,0,0)
 			gfxPts:insert(pt)
 		end
+	end
+	
+	--==============================
+	-- Public Functions
+	--==============================
+	function self:append(point)
+		hasChanged = true
+		if (#self > 0) then
+			local distance = Vector.subtract(point, self[#self])
+			distance = Vector.magnitude(distance)
+			distance = distance + sum[#sum]
+			table.insert(sum, distance)
+		else
+			table.insert(sum, 0)
+		end
+		table.insert(self, point)
+	end
+	
+	function self:removeSelf()
+		Runtime:removeEventListener("enterFrame", update)
+		if (gfx) then gfx:removeSelf() end
+		if (gfxPts) then gfxPts:removeSelf() end
+		gfx = nil
+		gfxPts = nil
+		self = nil
 	end
 	
 	function self:simplify(param)
@@ -181,7 +182,7 @@ function Path.new(param)
 		table.insert(sum, 0)
 		hasChanged = true
 	end
-	Runtime:addEventListener("enterFrame", self)
+	Runtime:addEventListener("enterFrame", update)
 	
 	return self
 end

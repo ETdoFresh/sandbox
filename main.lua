@@ -54,7 +54,7 @@ end
 -- Object creation
 --==============================
 -- Create an object to perform event
-local newObject = Steering.new{radius = 16, maxSpeed = 50, maxAcceleration = 10, maxTorque = 30, maxRotation = 200, targetRadius = 50/3}
+local newObject = Steering.new{radius = 16, maxSpeed = 50, maxAcceleration = 20, maxTorque = 50, maxRotation = 150}
 display.newImageRect(newObject, "character-01.png", 61, 61)
 newObject.x, newObject.y = 30,30
 newObject:setTarget({x = 0, y = 0, rotation = 0})
@@ -81,21 +81,29 @@ end
 
 local path
 local function drawPath(event)
+	local target = event.target
 	if (event.phase == "began") then
-		newObject:setSteering("wander")
+		target:setTarget({x = event.x, y = event.y})
+		target:setSteering("arrive")
+		display.getCurrentStage():setFocus(target)
+		target.isFocus = true
 		if (path) then path:removeSelf() end
 		path = Path.new{start = {x = event.x, y = event.y}}
-	elseif (event.phase == "moved") then
-		path:append{x = event.x, y = event.y}
-	elseif (event.phase == "ended") then
-		path:simplify{dist = 15, iterations = 2}
-		newObject:setTarget(path)
-		newObject:setSteering("followPath")
+	elseif (target.isFocus) then
+		if (event.phase == "moved") then
+			path:append{x = event.x, y = event.y}
+		elseif (event.phase == "ended") then
+			path:simplify{dist = 15, iterations = 1}
+			target:setTarget(path)
+			target:setSteering("followPath")
+			display.getCurrentStage():setFocus(nil)
+			target.isFocus = false
+		end
 	end
 	return true
 end
 
-background:addEventListener("touch", drawPath)
+newObject:addEventListener("touch", drawPath)
 --background:addEventListener("tap", changeTarget)
 --newObject:addEventListener("tap", changeMovement)
 --newObject2:addEventListener("tap", changeMovement)

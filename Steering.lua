@@ -309,7 +309,7 @@ end
 function FollowPath.new(param)
 	local self = {}
 	local Seek = Seek.new(param)
-	local Look = LookWhereYoureGoing.new(param)
+	local Face = Face.new(param)
 	self.character = param.character -- Holds the static data for the character
 	self.path = param.target -- Holds the path to follow
 	self.index = param.index or 1 -- Holds the current position on the path
@@ -326,8 +326,9 @@ function FollowPath.new(param)
 			return nil
 		end
 		Seek.target = waypoint
+		Face.target = waypoint
 		local steering = Seek:getSteering()
-		local steering2 = Look:getSteering()
+		local steering2 = Face:getSteering()
 		if (steering and steering2) then steering.angular = steering2.angular end
 		return steering
 	end
@@ -339,7 +340,7 @@ function Steering.new(param)
 	local self = param.character
 	local steeringType
 	
-	function self:enterFrame(event)
+	local function update(runtime, event)
 		local steering = steeringType:getSteering()
 		local velocity = getVelocity(self)
 		if (steering) then
@@ -371,12 +372,20 @@ function Steering.new(param)
 				velocity = Vector.add(velocity, desiredVelocity)
 				self:setLinearVelocity(velocity.x, velocity.y)
 			end
-			self.angularVelocity = 0
+			local magnitude = math.abs(self.angularVelocity)
+			if (magnitude > 0 and magnitude <= maxTorque) then
+				self.angularVelocity = 0
+			elseif (magnitude > 0) then
+				local desiredTorque = 0 - self.angularVelocity
+				desiredTorque = desiredTorque / math.abs(desiredTorque)
+				desiredTorque = desiredTorque * maxTorque
+				self.angularVelocity = self.angularVelocity + desiredTorque
+			end
 		end
 	end
 	
 	function self:setSteering(input)
-		Runtime:removeEventListener("enterFrame", self) -- Stop updating
+		Runtime:removeEventListener("enterFrame", update) -- Stop updating
 		if (input == "seek") then steeringType = Seek.new(param)
 		elseif (input == "arrive") then steeringType = Arrive.new(param)
 		elseif (input == "pursue") then steeringType = Pursue.new(param)
@@ -386,7 +395,7 @@ function Steering.new(param)
 		elseif (input == "followPath") then steeringType = FollowPath.new(param)
 		elseif (input == "combine") then steeringType = Combine.new(param)
 		else steeringType = nil end
-		if (steeringType) then Runtime:addEventListener("enterFrame", self) end -- Start updating
+		if (steeringType) then Runtime:addEventListener("enterFrame", update) end -- Start updating
 	end
 	
 	function self:setTarget(target)
