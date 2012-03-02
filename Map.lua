@@ -14,8 +14,8 @@ function Map.new(param)
 	-- Private Variables
 	--================================
 	local map = param.self or display.newGroup()
-	local viewWidth = param.viewWidth or map.width
-	local viewHeight = param.viewHeight or map.height
+	local mapWidth = param.mapWidth or map.width
+	local mapHeight = param.mapHeight or map.height
 	local isFocus = false
 	local prevTime, prevPos, velocity, focusTime
 	
@@ -27,7 +27,7 @@ function Map.new(param)
 	map.rotation = param.rotation or map.rotation
 	map.tween = {x = nil, y = nil}
 	
-	-- This function will be replaced
+	-- These functions will be replaced
 	local superRemoveSelf = map.removeSelf
 	
 	--================================
@@ -66,18 +66,18 @@ function Map.new(param)
 			if (map.x > 0) then
 				velocity.x = 0
 				map.tween.x = transition.to(map, {time = 400, x = 0, transition=easing.outQuad, onComplete = function() map.tween.x = nil end})
-			elseif (map.x < display.contentWidth - viewWidth) then
+			elseif (map.x < display.contentWidth - mapWidth) then
 				velocity.x = 0
-				map.tween.x = transition.to(map, {time = 400, x = display.contentWidth - viewWidth, transition=easing.outQuad, onComplete = function() map.tween.x = nil end})
+				map.tween.x = transition.to(map, {time = 400, x = display.contentWidth - mapWidth, transition=easing.outQuad, onComplete = function() map.tween.x = nil end})
 			end
 		end
 		if (not(map.tween.y)) then
 			if (map.y > 0) then
 				velocity.y = 0
 				map.tween.y = transition.to(map, {time = 400, y = 0, transition=easing.outQuad, onComplete = function() map.tween.y = nil end})
-			elseif (map.y < display.contentHeight - viewHeight) then
+			elseif (map.y < display.contentHeight - mapHeight) then
 				velocity.y = 0
-				map.tween.y = transition.to(map, {time = 400, y = display.contentHeight - viewHeight, transition=easing.outQuad, onComplete = function() map.tween.y = nil end})
+				map.tween.y = transition.to(map, {time = 400, y = display.contentHeight - mapHeight, transition=easing.outQuad, onComplete = function() map.tween.y = nil end})
 			end
 		end
 		
@@ -101,8 +101,8 @@ function Map.new(param)
 				local dx = event.x - map.x0
 				local dy = event.y - map.y0
 				map.x0, map.y0 = event.x, event.y
-				if (map.x > 0 or map.x < display.contentWidth - viewWidth) then dx = dx / 2 end
-				if (map.y > 0 or map.y < display.contentHeight - viewHeight) then dy = dy / 2 end				
+				if (map.x > 0 or map.x < display.contentWidth - mapWidth) then dx = dx / 2 end
+				if (map.y > 0 or map.y < display.contentHeight - mapHeight) then dy = dy / 2 end				
 				map.x = map.x + dx
 				map.y = map.y + dy
 			elseif (event.phase == "ended" or event.phase == "cancelled") then
@@ -118,6 +118,11 @@ function Map.new(param)
 	--================================
 	-- Public Functions
 	--================================
+	function map:refreshSize()
+		mapWidth = map.width
+		mapHeight = map.height
+	end
+	
 	function map:removeSelf()
 		Runtime:removeEventListener("enterFrame", trackVelocity)
 		Runtime:removeEventListener("enterFrame", slowDown)
