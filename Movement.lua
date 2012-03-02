@@ -6,7 +6,7 @@
 --==============================
 local Movement = {}
 
--- Require Vector functions
+-- Require Vector function
 local Vector = require "Vector"
 
 -- Default Values

@@ -16,9 +16,12 @@ local Pursue = {}
 local Align = {}
 local Face = {}
 local LookWhereYoureGoing = {}
+local VelocityMatch = {}
+local Wander = {}
+local FollowPath = {}
 local Combine = {}
 
--- Default Values
+-- Default Values for Parameters
 local maxAcceleration = 10 -- Holds the maximum acceleration the character can travel (pix/sec)
 local maxSpeed  = 150 -- Holds the maximum speed the character can travel (pix/sec)
 local targetRadius = 5 -- Holds the radius for arriving at the target
@@ -27,6 +30,11 @@ local timeToTarget = 0.1 -- Holds the time over which to achieve target speed
 local maxPrediction = 2 -- Holds the maxiumum prediction time
 local maxTorque = 20 -- Holds max torque of the character
 local maxRotation = 150 -- Holds max rotation of the character
+local wanderOffset = 40 -- Holds te forward offset of the wander
+local wanderRadius = 16 -- Holds te radius of the wander
+local wanderRate = 10 -- Holds the maximum rate at which the wanter orientation can change
+local wanderOrientation = 0 -- Holds the maximum acceleration of the character
+local pathOffset = 5 -- Holds the distance along the path
 
 local function getVelocity(object)
 	local velocity = {x = 0, y = 0}
@@ -44,6 +52,10 @@ local function mapToRange(degree)
 		degree = mapToRange(degree)
 	end
 	return degree
+end
+
+local function randomBinomial()
+	return math.random() - math.random()
 end
 
 function Seek.new(param)
@@ -179,6 +191,7 @@ end
 
 function Face.new(param)
 	local self = {}
+	local Align = Align.new(param)
 	self.character = param.character -- Holds the static data for the character and target
 	self.target = param.target
 	
@@ -188,8 +201,7 @@ function Face.new(param)
 		if (Vector.magnitude(direction) == 0) then return nil end -- Check for zero direction, and make no change if so
 		local newTarget = math.deg(math.atan2(direction.y, direction.x)) -- Put the target together
 		newTarget = {rotation = newTarget}
-		param.target = newTarget
-		local Align = Align.new(param)
+		Align.target = newTarget
 		return Align:getSteering()
 	end
 	return self
@@ -198,7 +210,7 @@ end
 function LookWhereYoureGoing.new(param)
 	local Align = Align.new(param)
 	local self = {}
-	self.character = param.character
+	self.character = param.character -- Holds the static data for the character
 	
 	function self:getSteering() -- Implemented as it was in Pursue
 		local character = self.character
@@ -226,6 +238,91 @@ function Combine.new(param)
 		local steering = move1
 		if (move1 and move2) then steering.angular = move2.angular
 		elseif (move2) then steering = move2 end
+		return steering
+	end
+	return self
+end
+
+function VelocityMatch.new(param)
+	local self = {}
+	self.character = param.character -- Holds the static data for the character and target
+	self.target = param.target
+	self.maxAcceleration = param.maxAcceleration or maxAcceleration -- Holds the maximum acceleration the character can travel
+	self.timeToTarget = param.timeToTarget or timeToTarget -- Holds the time over which to achieve target speed
+	
+	function self:getSteering()
+		local character, target, maxAcceleration = self.character, self.target, self.maxAcceleration
+		local timeToTarget = self.timeToTarget
+		local steering = {linear = {x = 0, y = 0}, angular = 0} -- Create the structure for the output
+		local linear = Vector.subtract(getVelocity(target), getVelocity(character)) -- Acceleration tried to get to the target velocity
+		linear = Vector.divide(linear, timeToTarget)
+		local acceleration = Vector.magnitude(linear) -- Check if the acceleration is too fast
+		if (acceleration > maxAcceleration) then
+			linear = Vector.normalize(linear)
+			linear = Vector.multiply(linear, maxAcceleration)
+		end
+		steering.linear = linear
+		return steering
+	end
+	return self
+end
+
+function Wander.new(param)
+	local self = {}
+	local Face = Face.new(param)
+	self.character = param.character -- Holds the static data for the character
+	self.wanderOffset = param.wanderOffset or wanderOffset -- Holds te radius and forward offset of the wander
+	self.wanderRadius = param.wanderRadius or wanderRadius
+	self.wanderRate = param.wanderRate or wanderRate -- Holds the maximum rate at which the wanter orientation can change
+	self.wanderOrientation = param.wanderOrientation or wanderOrientation -- Holds the current orientation of the wander target
+	self.maxAcceleration = param.maxAcceleration or maxAcceleration -- Holds the maximum acceleration of the character
+	
+	function self:getSteering()
+		local character, wanderOffset, wanderRadius = self.character, self.wanderOffset, self.wanderRadius
+		local wanderRate, maxAcceleration, wanderOrientation = self.wanderRate, self.maxAcceleration, self.wanderOrientation
+		-- Update the wander orientation
+		wanderOrientation = wanderOrientation + randomBinomial() * wanderRate
+		self.wanderOrientation = wanderOrientation
+		-- Calculate the combined target orientation
+		local targetOrientation = wanderOrientation + character.rotation
+		targetOrientation = Vector.fromAngle(targetOrientation)
+		targetOrientation = Vector.multiply(targetOrientation, wanderRadius)
+		-- Calculate the center of the wander circle
+		local target = Vector.fromAngle(character.rotation)
+		target = Vector.multiply(target, wanderOffset)
+		target = Vector.add(target, character)
+		-- Calculate the target location
+		target = Vector.add(target, targetOrientation)
+		-- Delegate to face
+		Face.target = target
+		local steering = Face:getSteering() or {angular = 0}
+		-- Now set the linear acceleration to be at full acceleration
+		-- in the direction of the orientation
+		local linear = Vector.fromAngle(character.rotation)
+		linear = Vector.multiply(linear, maxAcceleration)
+		steering.linear = linear
+		return steering
+	end
+	return self
+end
+
+function FollowPath.new(param)
+	local self = {}
+	local Seek = Arrive.new(param)
+	local Look = LookWhereYoureGoing.new(param)
+	self.character = param.character -- Holds the static data for the character
+	self.path = param.target -- Holds the path to follow
+	self.pathOffset = param.pathOffset -- Holds the distance along the path
+	self.currentParam = param.currentParam -- Holds the current position on the path
+	
+	function self:getSteering()
+		local character, path, pathOffset = self.character, self.path, self.pathOffset
+		self.currentParam = path:getParam(character, self.currentParam)
+		local targetParam = self.currentParam + pathOffset
+		Seek.target = path:getPosition(targetParam)
+		local steering = Seek:getSteering()
+		local steering2 = Look:getSteering()
+		if (steering and steering2) then steering.angular = steering2.angular end
 		return steering
 	end
 	return self
@@ -269,6 +366,8 @@ function Steering.new(param)
 		elseif (input == "pursue") then steeringType = Pursue.new(param)
 		elseif (input == "align") then steeringType = Align.new(param)
 		elseif (input == "face") then steeringType = Face.new(param)
+		elseif (input == "wander") then steeringType = Wander.new(param)
+		elseif (input == "followPath") then steeringType = FollowPath.new(param)
 		elseif (input == "combine") then steeringType = Combine.new(param)
 		else steeringType = nil end
 		if (steeringType) then Runtime:addEventListener("enterFrame", self) end -- Start updating
