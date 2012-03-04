@@ -5,6 +5,9 @@
 --================================
 local Camera = {}
 
+local screen = {width = display.contentWidth, height = display.contentHeight}
+local center = {x = screen.width / 2, y = screen.height / 2}
+
 -- Requirements
 local Vector = require 'Vector'
 
@@ -13,15 +16,12 @@ function Camera.new(param)
 	--================================
 	-- Private Variables
 	--================================
-	local self = param.self or display.newGroup()
-	local xMin = param.xMin or 0
-	local yMin = param.yMin or 0
+	local self = param.self or display.newGroup() -- display group
+	local xMin, yMin = 0, 0 -- the min limits
 	local xMax = param.xMax or self.width
 	local yMax = param.yMax or self.height
+	local target = param.target or {x = 0, y = 0}
 	local scale = 1
-	local isFocus = false
-	local prevTime, prevPos, velocity, focusTime
-	local tween = {x = nil, y = nil}
 	
 	--================================
 	-- Public Variables
@@ -36,6 +36,83 @@ function Camera.new(param)
 	--================================
 	-- Private Functions
 	--================================	
+	local function followTarget(event)
+		-- Get the center of the screen
+		-- Calculate top left (final result) (almost)
+		local newX = -(target.x * scale - center.x)
+		local newY = -(target.y * scale - center.y)
+		local xMin = xMin * scale
+		local yMin = yMin * scale
+		local xMax = xMax * scale
+		local yMax = yMax * scale
+		-- Limit camera top and left
+		newX = math.min(newX, xMin)
+		newY = math.min(newY, yMin)
+		-- Limit camera bottom and right
+		newX = math.max(newX, -(xMax - screen.width))
+		newY = math.max(newY, -(yMax - screen.height))
+		-- Move camera for this frame!
+		self.x = newX
+		self.y = newY
+	end
+	
+	--================================
+	-- Public Functions
+	--================================
+	function self:getLimits()
+		local xMin = center.x / scale
+		local yMin = center.y / scale
+		local xMax = xMax - center.x / scale
+		local yMax = yMax - center.y / scale
+		return {xMin = xMin, yMin = yMin, xMax = xMax, yMax = yMax}
+	end
+	
+	function self:refreshSize()
+		xMax, yMax = self.width, self.height
+	end
+	
+	function self:setZoom(zoom)
+		scale = zoom or scale
+		self.xScale, self.yScale = scale, scale
+	end
+	
+	function self:setTarget(newTarget)
+		target = newTarget or target
+	end
+	
+	function self:removeSelf()
+		Runtime:removeEventListener("enterFrame", followTarget)
+		Runtime:removeEventListener("enterFrame", slowDown)
+		self:removeEventListener("touch", onDrag)
+		superRemoveSelf(self)
+	end
+	
+	--================================
+	-- Constructor
+	--================================
+	Runtime:addEventListener("enterFrame", followTarget)
+	
+	return self
+end
+
+function Camera.newTarget(param)
+	param = param or {} -- Input parameters must be a table regardless
+	--================================
+	-- Private Variables
+	--================================
+	local self = param.self or display.newCircle(center.x, center.y, 10)
+	local isFocus = false
+	local prevPos, prevTime, velocity
+	local xMin, yMin = 0, 0
+	local xMax = self.parent.width
+	local yMax = self.parent.height
+	
+	-- These functions will be replaced
+	local superRemoveSelf = self.removeSelf
+	
+	--================================
+	-- Private Functions
+	--================================
 	local function trackVelocity(event)
 		if (prevPos) then 
 			local timePassed = event.time - prevTime
@@ -44,17 +121,18 @@ function Camera.new(param)
 		end
 		prevTime = event.time
 		prevPos = {x = self.x, y = self.y}
-		-- Lose focus after a certain amount of time (in case it gets stuck, like on android systems after mutlitouch)
-		if (event.time - focusTime > 1000) then
-			self:dispatchEvent{name = "touch", phase = "cancelled"}
-		end
-		-- Remove listener if not focused
-		if (not(isFocus)) then Runtime:removeEventListener("enterFrame", trackVelocity) end
 	end
-		
+	
+	local function limit(pos)
+		local limit = {x = pos.x, y = pos.y}
+		if (pos.x < xMin) then limit.x = xMin
+		elseif (pos.x > xMax) then limit.x = xMax end
+		if (pos.y < yMin) then limit.y = yMin
+		elseif (pos.y > yMax) then limit.y = yMax end
+		return limit
+	end
+	
 	local function slowDown(event)
-		-- Remove listener if focused
-		if (isFocus) then Runtime:removeEventListener("enterFrame", slowDown) end
 		--turn off scrolling if velocity is near zero
         if (Vector.magnitude(velocity) < .01) then
             velocity = {x = 0, y = 0}
@@ -66,107 +144,59 @@ function Camera.new(param)
         velocity = Vector.multiply(velocity, friction)
         local delta = Vector.multiply(velocity, timePassed)
 		if (math.abs(delta.x) > 0) then self.x = self.x + delta.x end
-		if (math.abs(delta.y) > 0) then self.y = self.y + delta.y end
-
-		if (not(tween.x)) then
-			if (self.x > xMin) then
-				velocity.x = 0
-				tween.x = transition.to(self, {time = 400, x = 0, transition=easing.outQuad, onComplete = function() tween.x = nil end})
-			elseif (self.x < display.contentWidth - xMax * scale) then
-				velocity.x = 0
-				tween.x = transition.to(self, {time = 400, x = display.contentWidth - xMax * scale, transition=easing.outQuad, onComplete = function() tween.x = nil end})
-			end
-		end
-		if (not(tween.y)) then
-			if (self.y > 0) then
-				velocity.y = 0
-				tween.y = transition.to(self, {time = 400, y = 0, transition=easing.outQuad, onComplete = function() tween.y = nil end})
-			elseif (self.y < display.contentHeight - yMax * scale) then
-				velocity.y = 0
-				tween.y = transition.to(self, {time = 400, y = display.contentHeight - yMax * scale, transition=easing.outQuad, onComplete = function() tween.y = nil end})
-			end
-		end
-		
+		if (math.abs(delta.y) > 0) then self.y = self.y + delta.y end		
+		local limit = limit(self)
+		if (limit.x ~= self.x) then velocity.x = 0 end
+		if (limit.y ~= self.y) then velocity.y = 0 end
+		self.x = limit.x
+		self.y = limit.y
 		return true
 	end
 	
 	local function onDrag(event)
-		focusTime = system.getTimer()
+		local target = event.target
 		if (event.phase == "began") then
+			local limits = target:getLimits()
+			xMin, yMin = limits.xMin, limits.yMin
+			xMax, yMax = limits.xMax, limits.yMax
+			display.getCurrentStage():setFocus(target)
+			isFocus = true
+			self.x0 = event.x
+			self.y0 = event.y
 			Runtime:removeEventListener("enterFrame", slowDown)
 			Runtime:addEventListener("enterFrame", trackVelocity)
-			display.getCurrentStage():setFocus(self, event.id)
-			isFocus = true
-			self.x0, self.y0 = event.x, event.y
-			if (tween.x) then transition.cancel(tween.x) end
-			if (tween.y) then transition.cancel(tween.y) end
-			tween.x = nil
-			tween.y = nil
 		elseif (isFocus) then
 			if (event.phase == "moved") then
-				local dx = event.x - self.x0
-				local dy = event.y - self.y0
+				local newPos = {x = self.x - (event.x - self.x0), y = self.y - (event.y - self.y0)}
+				local limit = limit(newPos)
+				self.x, self.y = limit.x, limit. y
 				self.x0, self.y0 = event.x, event.y
-				if (self.x > 0 or self.x < display.contentWidth - xMax * scale) then dx = dx / 4 end
-				if (self.y > 0 or self.y < display.contentHeight - yMax * scale) then dy = dy / 4 end				
-				self.x = self.x + dx
-				self.y = self.y + dy
 			elseif (event.phase == "ended" or event.phase == "cancelled") then
 				display.getCurrentStage():setFocus(nil)
 				isFocus = false
-				prevPos = nil
 				Runtime:removeEventListener("enterFrame", trackVelocity)
 				Runtime:addEventListener("enterFrame", slowDown)
 			end
 		end
+		return true
 	end
 	
 	--================================
 	-- Public Functions
-	--================================
-	function self:refreshSize()
-		mapWidth = self.width
-		mapHeight = self.height
-	end
-	
-	function self:giveControl()
-		self:addEventListener("touch", onDrag)
-	end
-	
-	function self:scale(newScale)
-		-- Get center view point
-		local newX = (self.x - display.contentWidth / 2)
-		local newY = (self.y - display.contentHeight / 2)
-		-- Set back to normal scale
-		newX = newX / scale
-		newY = newY / scale
-		-- calculate new Scale
-		scale = newScale or scale
-		-- Scale center view point
-		newX = newX * scale
-		newY = newY * scale
-		-- Get new top left point
-		newX = newX + display.contentWidth / 2
-		newY = newY + display.contentHeight / 2
-		-- Get yo limits right
-		if (newX > 0) then newX = 0
-		elseif (newX < display.contentWidth - xMax * scale) then newX = display.contentWidth - xMax * scale end
-		if (newY > 0) then newY = 0
-		elseif (newY < display.contentHeight - yMax * scale) then newY = display.contentHeight - yMax * scale end
-		transition.to(self, {time = 500, x = newX, y = newY, xScale = scale, yScale = scale})
-	end
-	
+	--================================	
 	function self:removeSelf()
-		Runtime:removeEventListener("enterFrame", trackVelocity)
-		Runtime:removeEventListener("enterFrame", slowDown)
-		self:removeEventListener("touch", onDrag)
+		self:addTouch(nil) -- Remove touch events
 		superRemoveSelf(self)
+	end
+	
+	function self:touch(event)
+		onDrag(event)
 	end
 	
 	--================================
 	-- Constructor
 	--================================
-	self:addEventListener("touch", onDrag)
+	self:setFillColor(0, 0, 255)
 	
 	return self
 end
